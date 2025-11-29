@@ -36,76 +36,80 @@ DeviceProcessEvents
 
 `````
 
-<img width="1255" height="728" alt="image" src="https://github.com/user-attachments/assets/c530a04a-5494-4aab-9769-a27f859b1ad0" />
-
-
 🚩 1. Remote Access Source
-Question:
-Identify the source IP address of the Remote Desktop Protocol connection.
 
-`````kql
+Goal: Identify the source IP address of the Remote Desktop Protocol connection.
+
+```kql
 DeviceLogonEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | project Timestamp, DeviceName, AccountName, LogonType, ActionType, RemoteIP
 | order by Timestamp asc
 
-
+```
 
 Thought Process:
 We filtered logon activity for external interactive logons to determine the origin of the unauthorized RDP connection.
 
-Question: What was the first CLI parameter name used during execution?
-
-Answer: -ExecutionPolicy
+Answer: 88.97.178.12
 
 🚩 2. Compromised User Account
-We then checked if any tampering attempts occurred on the compromised host by searching for files referencing tamper.
 
-`````kql
-DeviceFileEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where FileName matches regex @"(?i)(tamper)"
-| project TimeGenerated, DeviceName, ActionType, FileName, FolderPath
-| order by TimeGenerated asc
-`````
-<img width="1532" height="564" alt="image" src="https://github.com/user-attachments/assets/0ee22edd-5bc2-4af4-9144-17a20b794b5b" />
-
-Question: What was the name of the file related to this exploit?
-
-Answer: DefenderTamperArtifact.lnk
-
-🚩 3. Network Reconnaissance
-Next, we looked for commands that accessed clipboard data — a common quick-data theft tactic.
+Goal: Identify the user account that was compromised for initial access
 
 `````kql
 DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where FileName contains "powershell"
-| where ProcessCommandLine contains "clip"
-| project TimeGenerated, DeviceName, ActionType, FileName, FolderPath, ProcessCommandLine
-| order by TimeGenerated asc
+| where DeviceName == "azuki-sl"
+| where InitiatingProcessAccountName == "kenji.sato"
+| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+| project Timestamp, FileName, ProcessCommandLine, InitiatingProcessAccountName
+| order by Timestamp asc
 `````
-<img width="1538" height="476" alt="image" src="https://github.com/user-attachments/assets/cc52cf93-9747-4893-8fd6-3d100b70e2bd" />
+IMAGE
+
+Thought Process:
+We reviewed which account executed processes after remote authentication — confirming credential compromise.****
+
+🚩 3. Network Reconnaissance
+Goal: Identify the command and argument used to enumerate network neighbours.
+
+`````kql
+DeviceProcessEvents
+| where DeviceName == "azuki-sl"
+| where ProcessCommandLine contains "ARP"
+| where InitiatingProcessAccountName == "kenji.sato"
+| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+| project Timestamp, FileName, ProcessCommandLine, InitiatingProcessAccountName
+| order by Timestamp asc
+`````
+
 
 Question: Provide the command value tied to this exploit.
 
-Answer: "powershell.exe" -NoProfile -Sta -Command "try { Get-Clipboard | Out-Null } catch { }"
+Answer: We targeted ARP table enumeration activity — a common step in discovering local machines.
 
 🚩 4. Malware Staging Directory
 We searched for reconnaissance commands used to enumerate user sessions.
 
 `````kql
 DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where ProcessCommandLine contains "qwi"
-| project TimeGenerated, DeviceName, ActionType, FileName, FolderPath, ProcessCommandLine
-| order by TimeGenerated asc
+| where DeviceName == "azuki-sl"
+| where FileName in ("cmd.exe", "powershell.exe")
+| where ProcessCommandLine contains "mkdir"
+      or ProcessCommandLine contains "md "
+      or ProcessCommandLine contains "New-Item"
+| project Timestamp, FileName, ProcessCommandLine, InitiatingProcessAccountName
+| order by Timestamp asc
+
+DeviceProcessEvents
+| where DeviceName == "azuki-sl"
+| where ProcessCommandLine contains "attrib"
+| project Timestamp, ProcessCommandLine
+| order by Timestamp asc
+
 `````
-<img width="1475" height="501" alt="image" src="https://github.com/user-attachments/assets/1b380eca-bdef-45b5-bc94-784dafd7c75b" />
+
 
 Question: Point out when the last recon attempt occurred.
 
@@ -115,14 +119,13 @@ Answer: 2025-10-09T12:51:44.3425653Z
 After session recon, the attacker enumerated available drives and shares.
 
 `````kql
-DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where tolower(ProcessCommandLine) has_any ("net share", "net view", "dir /s", "Get-Volume", "Get-SmbShare", "wmic", "fsutil fsinfo drives", "Get-CimInstance -ClassName Win32_LogicalDisk")
-| project TimeGenerated, DeviceName, AccountName, FolderPath, ProcessCommandLine
-| order by TimeGenerated asc
+DeviceRegistryEvents
+ | where DeviceName == "azuki-sl"
+ | where RegistryKey contains @"Windows Defender\Exclusions\Extensions"
+ | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+ | project Timestamp, RegistryValueName, RegistryValueData, RegistryKey, InitiatingProcessAccountName
 `````
-<img width="1573" height="491" alt="image" src="https://github.com/user-attachments/assets/1d077d67-65c3-4249-960d-af87517ca8c6" />
+
 
 Question: Provide the 2nd command tied to this activity.
 
@@ -132,16 +135,13 @@ Answer: "cmd.exe" /c wmic logicaldisk get name,freespace,size"
 We verified whether the attacker tested external connectivity using common diagnostic commands.
 
 `````kql
-DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where ProcessCommandLine has_any ("ping", "nslookup", "tracert")
-| where FileName contains "cmd" or FileName contains "powershell"
-| where IsProcessRemoteSession == "true"
-| project TimeGenerated, DeviceName, FileName, ProcessCommandLine, InitiatingProcessParentFileName
-| order by TimeGenerated asc
+DeviceRegistryEvents
+ | where DeviceName == "azuki-sl"
+ | where RegistryKey contains @"Windows Defender\Exclusions\Paths"
+ | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+ | project Timestamp, RegistryValueName, RegistryValueData, RegistryKey, InitiatingProcessAccountName
+ | order by Timestamp asc
 `````
-<img width="1318" height="563" alt="image" src="https://github.com/user-attachments/assets/bc623cdb-83f7-4fc2-baaf-047e9b371ba7" />
 
 Question: Provide the File Name of the initiating parent process.
 
@@ -152,12 +152,11 @@ We inspected any attempts to query active user sessions.
 
 `````kql
 DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where ProcessCommandLine contains "qwi"
-| project TimeGenerated, DeviceName, FileName, FolderPath, ProcessCommandLine, InitiatingProcessUniqueId
+| where DeviceName == "azuki-sl"
+| where ProcessCommandLine contains "http://"
+| project Timestamp, FileName, ProcessCommandLine, InitiatingProcessAccountName
+| order by Timestamp asc
 `````
-<img width="1556" height="586" alt="image" src="https://github.com/user-attachments/assets/4bdb0913-84ca-491d-80cc-4de174290253" />
 
 Question: What is the unique ID of the initiating process?
 
@@ -166,6 +165,13 @@ Answer: 2533274790397065
 🚩 8. Scheduled Task Name
 Question: Provide the file name of the process that best demonstrates a runtime process enumeration event.
 
+```kql
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+| where ProcessCommandLine contains "/create"
+| project Timestamp, AccountName, ProcessCommandLine
+```
 Answer: tasklist.exe
 
 🚩 9. Scheduled Task Target
@@ -173,13 +179,13 @@ We searched for privilege enumeration attempts using whoami.
 
 `````kql
 DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where ProcessCommandLine contains "whoami"
-| order by TimeGenerated asc
-| take 1
+| where DeviceName contains "azuki-sl"
+| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+| where ProcessCommandLine contains "/tr"
+| project Timestamp, AccountName, ProcessCommandLine
+
 `````
-<img width="1526" height="508" alt="image" src="https://github.com/user-attachments/assets/b484e351-4039-45ea-bb92-947c9c3df292" />
+
 
 Question: Identify the timestamp of the first attempt.
 
@@ -190,13 +196,10 @@ We checked for outbound connections made by the malicious process to confirm net
 
 `````kql
 DeviceNetworkEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where InitiatingProcessParentFileName contains "runtimebroker.exe"
-| project TimeGenerated, DeviceName, RemoteUrl
-| order by TimeGenerated asc
+| where DeviceName contains "azuki-sl"
+| where InitiatingProcessFolderPath contains "WindowsCache"
+| project Timestamp, RemoteIP, RemotePort, InitiatingProcessFolderPath
 `````
-<img width="1005" height="526" alt="image" src="https://github.com/user-attachments/assets/b39b241e-b87e-4840-b8f8-1775e7c71770" />
 
 Question: Which outbound destination was contacted first?
 
@@ -206,15 +209,12 @@ Answer: www.msftconnecttest.com
 We analyzed file operations for evidence of data staging or compression.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated between (datetime(2025-10-09) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where InitiatingProcessParentFileName contains "runtimebroker.exe"
-| where FileName has_any ("zip")
-| project TimeGenerated, DeviceName, FileName, FolderPath, InitiatingProcessFileName
-| order by TimeGenerated asc
+DeviceNetworkEvents
+| where DeviceName contains "azuki-sl"
+| where InitiatingProcessFolderPath contains "WindowsCache"
+| project Timestamp, RemoteIP, RemotePort, InitiatingProcessFolderPath
+
 `````
-<img width="1452" height="617" alt="image" src="https://github.com/user-attachments/assets/6ba104f5-ee76-4f72-8d8e-c933ac975dd3" />
 
 Question: Provide the full folder path where the artifact was first dropped.
 
@@ -224,15 +224,17 @@ Answer: C:\Users\Public\ReconArtifacts.zip
 We identified simulated outbound data transfer attempts following artifact creation.
 
 `````kql
-DeviceNetworkEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where InitiatingProcessParentFileName contains "runtimebroker.exe"
-| project TimeGenerated, DeviceName, RemoteIP, RemoteUrl
-| order by TimeGenerated desc
+DeviceFileEvents
+| where DeviceName contains "azuki-sl"
+| where FileName endswith ".exe"
+| where FolderPath contains "ProgramData"
+   or FolderPath contains "Temp"
+   or FolderPath contains "Public"
+   or FolderPath contains "WindowsCache"
+| project Timestamp, FileName, FolderPath
+| order by Timestamp asc
 `````
 
-<img width="1546" height="560" alt="image" src="https://github.com/user-attachments/assets/fbced72d-483b-4bf8-8cfe-e272612c9743" />
 
 Question: Provide the IP of the last unusual outbound connection.
 
@@ -243,14 +245,12 @@ I looked for creation of persistence mechanisms through scheduled tasks.
 
 `````kql
 DeviceProcessEvents
-| where TimeGenerated between (datetime(2025-10-01) .. datetime(2025-10-15))
-| where DeviceName == "gab-intern-vm"
-| where InitiatingProcessParentFileName contains "runtimebroker"
-| project TimeGenerated, DeviceName, FileName, ProcessCommandLine
-| order by TimeGenerated desc
+| where DeviceName contains "azuki-sl"
+| extend cmds = extract(@"(\w+::\w+)", 1, ProcessCommandLine)
+| where isnotempty(cmds)
+| project Timestamp, cmds, ProcessCommandLine
 `````
 
-<img width="1540" height="753" alt="image" src="https://github.com/user-attachments/assets/842af05f-b028-4b31-ace3-1f4d0bbd4fef" />
 
 Question: Provide the value of the task name.
 
@@ -259,10 +259,10 @@ Answer: SupportToolUpdater
 🚩 14. Data Staging Archive
 
 `````kql
-DeviceRegistryEvents
-| where DeviceName startswith "gab-intern-vm"
-| where RegistryValueName == "RemoteAssistUpdater"
-| project Timestamp, DeviceName, ActionType, RegistryKey, RegistryValueName, RegistryValueData
+DeviceFileEvents
+| where DeviceName contains "azuki-sl"
+| where FileName endswith ".zip"
+| project Timestamp, FileName, FolderPath
 | order by Timestamp asc
 `````
 
@@ -274,12 +274,17 @@ Answer: RemoteAssistUpdater
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceNetworkEvents
+| where DeviceName contains "azuki-sl"
+| where RemoteUrl contains "drive"
+    or RemoteUrl contains "dropbox"
+    or RemoteUrl contains "google"
+    or RemoteUrl contains "one"
+    or RemoteUrl contains "mega"
+    or RemoteUrl contains "slack"
+    or RemoteUrl contains "disc"
+| project Timestamp, RemoteUrl, InitiatingProcessFileName
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
 
 Question: Identify the file name of the artifact left behind.
 
@@ -289,12 +294,12 @@ Answer: SupportChat_log.lnk
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where ProcessCommandLine contains "wevtutil"
+| project Timestamp, InitiatingProcessFileName, ProcessCommandLine
+| order by Timestamp asc
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
 
 Question: Identify the file name of the artifact left behind.
 
@@ -304,12 +309,12 @@ Answer: SupportChat_log.lnk
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where ProcessCommandLine contains "localgroup"
+| project Timestamp, ProcessCommandLine
+| order by Timestamp asc
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
 
 Question: Identify the file name of the artifact left behind.
 
@@ -319,12 +324,13 @@ Answer: SupportChat_log.lnk
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where ProcessCommandLine matches regex @"\w+\.ps1"
+| extend script = extract(@"(\w+\.ps1)", 1, ProcessCommandLine)
+| project Timestamp, script, ProcessCommandLine
+| order by Timestamp asc
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
 
 Question: Identify the file name of the artifact left behind.
 
@@ -334,12 +340,13 @@ Answer: SupportChat_log.lnk
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where ProcessCommandLine contains "cmdkey"
+| project Timestamp, ProcessCommandLine, ProcessRemoteSessionIP
+| order by Timestamp asc
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
+
 
 Question: Identify the file name of the artifact left behind.
 
@@ -349,12 +356,13 @@ Answer: SupportChat_log.lnk
 The attacker left behind a fake helpdesk log file to disguise their actions as legitimate support work.
 
 `````kql
-DeviceFileEvents
-| where TimeGenerated > (todatetime('2025-10-09T13:01:29.7815532Z'))
-| where DeviceName == "gab-intern-vm"
-| order by TimeGenerated asc
+DeviceProcessEvents
+| where DeviceName contains "azuki-sl"
+| where ProcessCommandLine contains "mstsc.exe"
+| project Timestamp, ProcessCommandLine, ProcessRemoteSessionIP
+| order by Timestamp asc
 `````
-<img width="1572" height="762" alt="image" src="https://github.com/user-attachments/assets/45be2ac4-c3a3-4f69-aa43-c8bcdb498dd7" />
+
 
 Question: Identify the file name of the artifact left behind.
 
@@ -362,24 +370,30 @@ Answer: SupportChat_log.lnk
 
 
 
-| Flag  | Description                         | Value                                                          |                       |
-| ----- | ----------------------------------- | -------------------------------------------------------------- | --------------------- |
-| Start | Suspicious Machine                  | gab-intern-vm                                                  |                       |
-| 1     | 1st CLI parameter used in execution | -ExecutionPolicy                                               |                       |
-| 2     | File related to exploit             | DefenderTamperArtifact.lnk                                     |                       |
-| 3     | Exploit command value               | "powershell.exe" -NoProfile -Sta -Command "try { Get-Clipboard | Out-Null } catch { }" |
-| 4     | Last recon attempt                  | 2025-10-09T12:51:44.3425653Z                                   |                       |
-| 5     | 2nd command tied to mapping         | "cmd.exe" /c wmic logicaldisk get name,freespace,size          |                       |
-| 6     | Initiating parent process           | RuntimeBroker.exe                                              |                       |
-| 7     | Process unique ID                   | 2533274790397065                                               |                       |
-| 8     | Process inventory                   | tasklist.exe                                                   |                       |
-| 9     | Privilege-check timestamp           | 2025-10-09T12:52:14.3135459Z                                   |                       |
-| 10    | 1st outbound destination            | [www.msftconnecttest.com](http://www.msftconnecttest.com)      |                       |
-| 11    | Artifact path                       | C:\Users\Public\ReconArtifacts.zip                             |                       |
-| 12    | Unusual outbound IP                 | 100.29.147.161                                                 |                       |
-| 13    | Scheduled task name                 | SupportToolUpdater                                             |                       |
-| 14    | Registry value name                 | RemoteAssistUpdater                                            |                       |
-| 15    | Artifact left behind                | SupportChat_log.lnk                                            |                       |
+| Flag | Category / Description                          | Value                                                   |
+|------|-------------------------------------------------|---------------------------------------------------------|
+| Start| Compromised Host System                         | AZUKI-SL                                                |
+| 1    | Remote Access Source IP                         | 88.97.178.12                                            |
+| 2    | Compromised User Account                        | kenji.sato                                              |
+| 3    | Network Reconnaissance Command                  | ARP -a                                                  |
+| 4    | Malware Staging Directory                       | C:\ProgramData\WindowsCache                             |
+| 5    | Defender Excluded File Extensions (count)       | 3                                                       |
+| 6    | Defender Temp Folder Exclusion                  | C:\Users\KENJI~1.SAT\AppData\Local\Temp                 |
+| 7    | Download Utility Used (LOLBIN)                  | certutil.exe                                            |
+| 8    | Scheduled Task Name                             | Windows Update Check                                    |
+| 9    | Scheduled Task Execution Binary                 | C:\ProgramData\WindowsCache\svchost.exe                 |
+| 10   | C2 External Control Server                      | 78.141.196.6                                            |
+| 11   | Command & Control Port                          | 443                                                     |
+| 12   | Credential Dumping Executable                   | mm.exe                                                  |
+| 13   | Credential Memory Extraction Module             | sekurlsa::logonpasswords                                |
+| 14   | Stolen Data Archive                             | export-data.zip                                         |
+| 15   | Exfiltration Channel                            | discord                                                 |
+| 16   | First Windows Log Cleared                       | Security                                                |
+| 17   | Persistence Admin-Level Backdoor Account        | support                                                 |
+| 18   | Malicious Automation Script                     | wupdate.ps1                                             |
+| 19   | Lateral Movement Target IP                      | 10.1.0.188                                              |
+| 20   | Remote Access Tool Used for Pivoting            | mstsc.exe                                               |
+
 
 
 Report Completed By: Joarder Rashid
