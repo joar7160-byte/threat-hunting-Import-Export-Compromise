@@ -36,9 +36,7 @@ DeviceProcessEvents
 
 `````
 
-🚩 1. Remote Access Source
-
-Identify the source IP address of the Remote Desktop Protocol connection
+🚩 1. Remote Access Source: Identify the source IP address of the Remote Desktop Protocol connection
 
 ```kql
 DeviceLogonEvents
@@ -56,8 +54,7 @@ We filtered logon activity for external interactive logons to determine the orig
 
 Answer: 88.97.178.12
 
-🚩 2. Compromised User Account
-Identify the user account that was compromised for initial access
+🚩 2. Compromised User Account: Identify the user account that was compromised for initial access
 
 `````kql
 DeviceLogonEvents
@@ -74,8 +71,7 @@ We reviewed which account executed processes after remote authentication, confir
 
 Answer: kenji.sato
 
-🚩 3. Network Reconnaissance
-Identify the command and argument used to enumerate network neighbours
+🚩 3. Network Reconnaissance: Identify the command and argument used to enumerate network neighbours
 
 `````kql
 DeviceProcessEvents
@@ -93,8 +89,7 @@ We targeted ARP table enumeration activity because it's a common step in discove
 
 Answer: "ARP.EXE" -a
 
-🚩 4. Malware Staging Directory
-Identify the PRIMARY staging directory where malware was stored
+🚩 4. Malware Staging Directory: Identify the PRIMARY staging directory where malware was stored
 
 `````kql
 DeviceProcessEvents
@@ -121,8 +116,7 @@ I looked for directory creation and manipulation activity in `DeviceProcessEvent
 
 Answer: C:\ProgramData\WindowsCache
 
-🚩 5. File Extension Exclusions
-How many file extensions were excluded from Windows Defender scanning? 
+🚩 5. File Extension Exclusions:  How many file extensions were excluded from Windows Defender scanning? 
 
 `````kql
 DeviceRegistryEvents
@@ -138,8 +132,7 @@ I pivoted to `DeviceRegistryEvents` and searched under the `Windows Defender\Exc
 
 Answer: 3
 
-🚩 6. Temporary Folder Exclusion
-What temporary folder path was excluded from Windows Defender scanning?
+🚩 6. Temporary Folder Exclusion:  What temporary folder path was excluded from Windows Defender scanning?
 
 `````kql
 DeviceRegistryEvents
@@ -157,8 +150,7 @@ Question: Provide the File Name of the initiating parent process.
 
 Answer: C:\Users\KENJI~1.SAT\AppData\Local\Temp
 
-🚩 7. Download Utility Abuse
-Identify the Windows-native binary the attacker abused to download files
+🚩 7. Download Utility Abuse: Identify the Windows-native binary the attacker abused to download files
 
 `````kql
 DeviceProcessEvents
@@ -175,8 +167,7 @@ To identify whether the attacker abused built-in Windows utilities to download m
 
 Answer: certutil.exe
 
-🚩 8. Scheduled Task Name
-Identify the name of the scheduled task created for persistence
+🚩 8. Scheduled Task Name: Identify the name of the scheduled task created for persistence
 
 ```kql
 DeviceProcessEvents
@@ -187,8 +178,7 @@ DeviceProcessEvents
 ```
 Answer: Windows Update Check
 
-🚩 9. Scheduled Task Target
-Identify the executable path configured in the scheduled task?
+🚩 9. Scheduled Task Target: Identify the executable path configured in the scheduled task?
 
 ```kql
 DeviceProcessEvents
@@ -205,8 +195,7 @@ Using the same `/create` and `/tr`-based hunting approach in `DeviceProcessEvent
 
 Answer: C:\ProgramData\WindowsCache\svchost.exe
 
-🚩 10. C2 Server Address
-Identify the IP address of the command and control server
+🚩 10. C2 Server Address: Identify the IP address of the command and control server
 
 `````kql
 DeviceNetworkEvents
@@ -221,8 +210,7 @@ I pivoted to `DeviceNetworkEvents` and scoped to `azuki-sl`, then filtered on co
 
 Answer: 78.141.196.6
 
-🚩 11. C2 Port
-Identify the destination port used for command and control communications
+🚩 11. C2 Port: Identify the destination port used for command and control communications
 
 `````kql
 DeviceNetworkEvents
@@ -238,8 +226,7 @@ From the same `DeviceNetworkEvents` rows used for Flag 10, I examined the `Remot
 
 Answer: 443
 
-🚩 12. Credential Theft Tool
-Identify the filename of the credential dumping tool
+🚩 12. Credential Theft Tool: Identify the filename of the credential dumping tool
 
 `````kql
 DeviceFileEvents
@@ -259,8 +246,8 @@ I searched `DeviceFileEvents` for `.exe` files dropped into sensitive or attacke
 
 Answer: mm.exe
 
-🚩 13. Memory Extraction Module
-Identify the module used to extract logon passwords from memory
+🚩 13. Memory Extraction Module: Identify the module used to extract logon passwords from memory
+
 
 `````kql
 DeviceProcessEvents
@@ -278,8 +265,7 @@ In `DeviceProcessEvents`, I used a regex extraction on `ProcessCommandLine` to p
 
 Answer: sekurlsa::logonpasswords
 
-🚩 14. Data Staging Archive
-Identify the compressed archive filename used for data exfiltration
+🚩 14. Data Staging Archive:  Identify the compressed archive filename used for data exfiltration
 
 `````kql
 DeviceFileEvents
@@ -296,8 +282,7 @@ I scanned `DeviceFileEvents` for files ending in `.zip` on `azuki-sl` and sorted
 
 Answer: export-data.zip
 
-🚩 15. Exfiltration Channel
-Identify the cloud service used to exfiltrate stolen data
+🚩 15. Exfiltration Channel:  Identify the cloud service used to exfiltrate stolen data
 
 `````kql
 DeviceNetworkEvents
@@ -318,8 +303,7 @@ I hunted in `DeviceNetworkEvents` for `RemoteUrl` values containing common file-
 
 Answer: discord
 
-🚩 16. Log Tampering
-Identify the first Windows event log cleared by the attacker
+🚩 16. Log Tampering: Identify the first Windows event log cleared by the attacker
 
 `````kql
 DeviceProcessEvents
@@ -335,8 +319,7 @@ I returned to `DeviceProcessEvents` and filtered for `wevtutil` usage on `azuki-
 
 Answer: Security
 
-🚩 17. Persistence Account
-Identify the backdoor account username created by the attacker
+🚩 17. Persistence Account: Identify the backdoor account username created by the attacker
 
 ```kql
 DeviceProcessEvents
@@ -352,8 +335,7 @@ To detect malicious account creation, I searched `DeviceProcessEvents` for `net 
 
 Answer: Support
 
-🚩 18. Malicious Script
-Identify the PowerShell script file used to automate the attack chain
+🚩 18. Malicious Script: Identify the PowerShell script file used to automate the attack chain
 
 ```kql
 DeviceProcessEvents
@@ -370,8 +352,7 @@ I used regex in `DeviceProcessEvents` to extract any `*.ps1` script names from `
 
 Answer: wupdate.ps1
 
-🚩 19. Secondary Target
-What IP address was targeted for lateral movement?
+🚩 19. Secondary Target: What IP address was targeted for lateral movement?
 
 `````kql
 DeviceProcessEvents
@@ -387,8 +368,7 @@ I focused on `DeviceProcessEvents` entries containing `cmdkey`, which is commonl
 
 Answer: 10.1.0.188
 
-🚩 20. Remote Access Tool
-Identify the remote access tool used for lateral movement.  
+🚩 20. Remote Access Tool: Identify the remote access tool used for lateral movement.  
 
 `````kql
 DeviceProcessEvents
