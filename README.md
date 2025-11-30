@@ -113,6 +113,9 @@ DeviceProcessEvents
 | order by Timestamp asc
 
 `````
+<img width="1598" height="735" alt="image" src="https://github.com/user-attachments/assets/ad7e75ce-1d3f-4c16-b811-3ef0b5bf6ad8" />
+
+
 Thought process: 
 I looked for directory creation and manipulation activity in `DeviceProcessEvents`, focusing on `cmd.exe` / `powershell.exe` commands using `mkdir`, `md`, or `New-Item`, followed by `attrib` to hide folders. This pattern revealed a suspicious folder under `C:\ProgramData\` that was later used as a tool and payload staging location
 
