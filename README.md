@@ -53,6 +53,7 @@ Thought Process:
 We filtered logon activity for external interactive logons to determine the origin of the unauthorized RDP connection.
 
 Answer: 88.97.178.12
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 2. Compromised User Account: Identify the user account that was compromised for initial access
 
@@ -70,6 +71,7 @@ Thought Process:
 We reviewed which account executed processes after remote authentication, confirming credential compromise.
 
 Answer: kenji.sato
+
 ------------------------------------------------------------------------------------------------------------------------------------
 
 🚩 3. Network Reconnaissance: Identify the command and argument used to enumerate network neighbours
@@ -89,6 +91,7 @@ Thought Process:
 We targeted ARP table enumeration activity because it's a common step in discovering local machines.
 
 Answer: "ARP.EXE" -a
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 4. Malware Staging Directory: Identify the PRIMARY staging directory where malware was stored
 
@@ -111,11 +114,13 @@ DeviceProcessEvents
 `````
 <img width="1598" height="735" alt="image" src="https://github.com/user-attachments/assets/ad7e75ce-1d3f-4c16-b811-3ef0b5bf6ad8" />
 
-------------------------------------------------------------------------------------------------------------------------------------
+
 Thought process: 
 I looked for directory creation and manipulation activity in `DeviceProcessEvents`, focusing on `cmd.exe` / `powershell.exe` commands using `mkdir`, `md`, or `New-Item`, followed by `attrib` to hide folders. This pattern revealed a suspicious folder under `C:\ProgramData\` that was later used as a tool and payload staging location
 
 Answer: C:\ProgramData\WindowsCache
+
+------------------------------------------------------------------------------------------------------------------------------------
 
 🚩 5. File Extension Exclusions:  How many file extensions were excluded from Windows Defender scanning? 
 
@@ -132,6 +137,7 @@ Thought process:
 I pivoted to `DeviceRegistryEvents` and searched under the `Windows Defender\Exclusions\Extensions` key on `azuki-sl` during the incident timeframe. By reviewing the `RegistryValueName`/`RegistryValueData` entries, I counted the distinct extensions that the attacker excluded from Defender scanning.  
 
 Answer: 3
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 6. Temporary Folder Exclusion:  What temporary folder path was excluded from Windows Defender scanning?
 
@@ -150,6 +156,7 @@ Still in `DeviceRegistryEvents`, I then targeted `Windows Defender\Exclusions\Pa
 Question: Provide the File Name of the initiating parent process.
 
 Answer: C:\Users\KENJI~1.SAT\AppData\Local\Temp
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 7. Download Utility Abuse: Identify the Windows-native binary the attacker abused to download files
 
@@ -167,6 +174,7 @@ Thought process:
 To identify whether the attacker abused built-in Windows utilities to download malicious files, I filtered process executions containing URLs (`http://`). Seeing `certutil.exe` used with remote download parameters confirmed the attacker was leveraging a LOLBIN to evade antivirus detection while fetching additional payloads.
 
 Answer: certutil.exe
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 8. Scheduled Task Name: Identify the name of the scheduled task created for persistence
 
@@ -178,6 +186,7 @@ DeviceProcessEvents
 | project Timestamp, AccountName, ProcessCommandLine
 ```
 Answer: Windows Update Check
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 9. Scheduled Task Target: Identify the executable path configured in the scheduled task?
 
@@ -195,6 +204,7 @@ Thought Process:
 Using the same `/create` and `/tr`-based hunting approach in `DeviceProcessEvents`, I focused specifically on entries with `/tr` to extract the “task action” path. The malicious task was configured to execute a binary directly out of the attacker’s staging directory
 
 Answer: C:\ProgramData\WindowsCache\svchost.exe
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 10. C2 Server Address: Identify the IP address of the command and control server
 
@@ -210,6 +220,7 @@ Thought Process:
 I pivoted to `DeviceNetworkEvents` and scoped to `azuki-sl`, then filtered on connections where the `InitiatingProcessFolderPath` included `WindowsCache`, tying outbound traffic back to the staged malware. Among those connections, I identified the external `RemoteIP` serving as the C2 endpoint
 
 Answer: 78.141.196.6
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 11. C2 Port: Identify the destination port used for command and control communications
 
@@ -226,6 +237,7 @@ DeviceNetworkEvents
 From the same `DeviceNetworkEvents` rows used for Flag 10, I examined the `RemotePort` column to determine how the malware communicated with the C2. The traffic was tunneled over a commonly allowed encrypted port, helping it blend in with normal HTTPS traffic.  
 
 Answer: 443
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 12. Credential Theft Tool: Identify the filename of the credential dumping tool
 
@@ -246,6 +258,7 @@ DeviceFileEvents
 I searched `DeviceFileEvents` for `.exe` files dropped into sensitive or attacker-typical directories such as `ProgramData`, `Temp`, `Public`, and `WindowsCache`. By sorting these by `Timestamp`, I identified a short, suspiciously named executable that aligned with the credential access phase.  
 
 Answer: mm.exe
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 13. Memory Extraction Module: Identify the module used to extract logon passwords from memory
 
@@ -265,6 +278,7 @@ In `DeviceProcessEvents`, I used a regex extraction on `ProcessCommandLine` to p
 
 
 Answer: sekurlsa::logonpasswords
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 14. Data Staging Archive:  Identify the compressed archive filename used for data exfiltration
 
@@ -282,6 +296,7 @@ DeviceFileEvents
 I scanned `DeviceFileEvents` for files ending in `.zip` on `azuki-sl` and sorted them chronologically. The suspicious archive created in the staging area around the collection/exfiltration phase clearly matched the attacker’s data bundle
 
 Answer: export-data.zip
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 15. Exfiltration Channel:  Identify the cloud service used to exfiltrate stolen data
 
@@ -303,6 +318,7 @@ DeviceNetworkEvents
 I hunted in `DeviceNetworkEvents` for `RemoteUrl` values containing common file-sharing and collaboration platforms (`drive`, `dropbox`, `mega`, `slack`, `disc`, etc.). Among these, I identified outbound connections consistent with an exfiltration channel to a popular chat/file-sharing platform
 
 Answer: discord
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 16. Log Tampering: Identify the first Windows event log cleared by the attacker
 
@@ -319,6 +335,7 @@ DeviceProcessEvents
 I returned to `DeviceProcessEvents` and filtered for `wevtutil` usage on `azuki-sl`, then ordered results by `Timestamp`. The first invocation revealed which log channel the attacker prioritized for clearing to disrupt forensic reconstruction.  
 
 Answer: Security
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 17. Persistence Account: Identify the backdoor account username created by the attacker
 
@@ -335,6 +352,7 @@ DeviceProcessEvents
 To detect malicious account creation, I searched `DeviceProcessEvents` for `net localgroup` or `localgroup` commands. Reviewing those command lines showed a new local user being added and then placed into privileged groups as a stealthy persistence mechanism.
 
 Answer: Support
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 18. Malicious Script: Identify the PowerShell script file used to automate the attack chain
 
@@ -352,6 +370,7 @@ DeviceProcessEvents
 I used regex in `DeviceProcessEvents` to extract any `*.ps1` script names from `ProcessCommandLine` across `azuki-sl`, then sorted by `Timestamp` to see which script appeared around the initial execution and automation phase. The identified script clearly chained multiple attacker actions.
 
 Answer: wupdate.ps1
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 19. Secondary Target: What IP address was targeted for lateral movement?
 
@@ -368,6 +387,7 @@ DeviceProcessEvents
 I focused on `DeviceProcessEvents` entries containing `cmdkey`, which is commonly used to store alternate credentials for remote systems. The `ProcessCommandLine` and `ProcessRemoteSessionIP` fields exposed the internal IP that the attacker was preparing or using for lateral movement.
 
 Answer: 10.1.0.188
+
 ------------------------------------------------------------------------------------------------------------------------------------
 🚩 20. Remote Access Tool: Identify the remote access tool used for lateral movement.  
 
