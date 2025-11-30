@@ -116,9 +116,7 @@ DeviceProcessEvents
 Thought process: 
 I looked for directory creation and manipulation activity in `DeviceProcessEvents`, focusing on `cmd.exe` / `powershell.exe` commands using `mkdir`, `md`, or `New-Item`, followed by `attrib` to hide folders. This pattern revealed a suspicious folder under `C:\ProgramData\` that was later used as a tool and payload staging location
 
-Question: Point out when the last recon attempt occurred.
-
-Answer: 2025-10-09T12:51:44.3425653Z
+Answer: C:\ProgramData\WindowsCache
 
 🚩 5. File Extension Exclusions
 How many file extensions were excluded from Windows Defender scanning? 
@@ -154,7 +152,7 @@ Thought process:
 Still in `DeviceRegistryEvents`, I then targeted `Windows Defender\Exclusions\Paths` to identify folder-level exclusions. Sorting by timestamp made it easy to spot a suspicious user temp directory added as an exclusion, clearly used to safely drop and execute tooling.  
 Question: Provide the File Name of the initiating parent process.
 
-Answer: RuntimeBroker.exe
+Answer: C:\Users\KENJI~1.SAT\AppData\Local\Temp
 
 🚩 7. Download Utility Abuse
 Identify the Windows-native binary the attacker abused to download files
@@ -256,7 +254,7 @@ DeviceFileEvents
 **Thought process:**  
 I searched `DeviceFileEvents` for `.exe` files dropped into sensitive or attacker-typical directories such as `ProgramData`, `Temp`, `Public`, and `WindowsCache`. By sorting these by `Timestamp`, I identified a short, suspiciously named executable that aligned with the credential access phase.  
 
-Answer: 100.29.147.161
+Answer: mm.exe
 
 🚩 13. Memory Extraction Module
 Identify the module used to extract logon passwords from memory
