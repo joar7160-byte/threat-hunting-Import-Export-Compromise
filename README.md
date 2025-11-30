@@ -185,6 +185,11 @@ DeviceProcessEvents
 | where ProcessCommandLine contains "/create"
 | project Timestamp, AccountName, ProcessCommandLine
 ```
+<img width="1599" height="733" alt="image" src="https://github.com/user-attachments/assets/867dfec8-d509-4a7c-8596-25ffd5e26b00" />
+
+Thought Process:
+I searched for /create in DeviceProcessEvents to detect scheduled task creation activity and identified a task name designed to masquerade as a legitimate system update.
+
 Answer: Windows Update Check
 
 ------------------------------------------------------------------------------------------------------------------------------------
